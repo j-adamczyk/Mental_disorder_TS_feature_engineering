@@ -1,5 +1,5 @@
 import os
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, TypeVar, Union
 
 import numpy as np
 import pandas as pd
@@ -17,27 +17,40 @@ from sklearn.metrics import (
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 
+ArrayLike = TypeVar("ArrayLike", bound=Union[np.ndarray, pd.DataFrame])
+
+
 class Dataset:
-    def __init__(self, dirpath: str, condition_dir_name: str = "condition") -> None:
+    def __init__(self, dirpath: str, condition_dir_name: str = "condition"):
         condition_dirpath = os.path.join(dirpath, condition_dir_name)
         control_dirpath = os.path.join(dirpath, "control")
 
-        self.condition: List[pd.DataFrame] = \
-            [pd.read_csv(os.path.join(condition_dirpath, file)) for file in os.listdir(condition_dirpath)]
+        self.condition: List[pd.DataFrame] = [
+            pd.read_csv(os.path.join(condition_dirpath, file))
+            for file in os.listdir(condition_dirpath)
+        ]
 
-        self.control: List[pd.DataFrame] = \
-            [pd.read_csv(os.path.join(control_dirpath, file)) for file in os.listdir(control_dirpath)]
+        self.control: List[pd.DataFrame] = [
+            pd.read_csv(os.path.join(control_dirpath, file))
+            for file in os.listdir(control_dirpath)
+        ]
 
 
-def variance_thresholding(X_train: np.ndarray, X_test: np.ndarray, threshold: float) -> Tuple[np.ndarray, np.ndarray]:
+def variance_thresholding(
+    X_train: ArrayLike,
+    X_test: ArrayLike,
+    threshold: float
+) -> Tuple[ArrayLike, ArrayLike]:
     """
-    Filters out those features from data that have variance lower than threshold. Variance is calculated on
-    training data only (first scaled to range [0, 1] to enable direct comparison of variances), and then
-    resulting filtering is applied to test data.
+    Filters out those features from data that have variance lower than
+    threshold. Variance is calculated on training data only (first scaled to
+    range [0, 1] to enable direct comparison of variances), and then resulting
+    filtering is applied to test data.
 
     :param X_train: training data
     :param X_test: test data
-    :threshold: variance threshold, features with variance lower than this will be rejected
+    :param threshold: variance threshold, features with variance lower than
+    this will be rejected
     :returns: tuple of transformed (X_train, X_test)
     """
     scaler = MinMaxScaler(feature_range=(0, 1), copy=True)
@@ -46,13 +59,29 @@ def variance_thresholding(X_train: np.ndarray, X_test: np.ndarray, threshold: fl
     thresholder = VarianceThreshold(threshold=threshold)
     thresholder.fit(X_train_scaled)
 
-    X_train = thresholder.transform(X_train)
-    X_test = thresholder.transform(X_test)
+    if isinstance(X_train, np.ndarray):
+        X_train = thresholder.transform(X_train)
+    elif isinstance(X_train, pd.DataFrame):
+        X_train = X_train.loc[:, thresholder.variances_ >= threshold]
+    else:
+        raise ValueError(f"X_train should be Numpy array or Pandas DataFrame, "
+                         f"got: {type(X_train)}")
+
+    if isinstance(X_test, np.ndarray):
+        X_test = thresholder.transform(X_test)
+    elif isinstance(X_test, pd.DataFrame):
+        X_test = X_test.loc[:, thresholder.variances_ >= threshold]
+    else:
+        raise ValueError(f"X_test should be Numpy array or Pandas DataFrame, "
+                         f"got: {type(X_test)}")
 
     return X_train, X_test
 
 
-def standardize(X_train: np.ndarray, X_test: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def standardize(
+    X_train: ArrayLike,
+    X_test: ArrayLike,
+) -> Tuple[ArrayLike, ArrayLike]:
     """
     Performs standardization, i.e. subtract mean and divide by standard deviation for each feature.
     Calculates mean and standard deviation using only training data.
@@ -64,8 +93,29 @@ def standardize(X_train: np.ndarray, X_test: np.ndarray) -> Tuple[np.ndarray, np
     scaler = StandardScaler()
     scaler.fit(X_train)
 
-    X_train = scaler.transform(X_train)
-    X_test = scaler.transform(X_test)
+    if isinstance(X_train, np.ndarray):
+        X_train = scaler.transform(X_train)
+    elif isinstance(X_train, pd.DataFrame):
+        X_train = pd.DataFrame(
+            data=scaler.transform(X_train),
+            index=X_train.index,
+            columns=X_train.columns
+        )
+    else:
+        raise ValueError(f"X_train should be Numpy array or Pandas DataFrame, "
+                         f"got: {type(X_train)}")
+
+    if isinstance(X_test, np.ndarray):
+        X_test = scaler.transform(X_test)
+    elif isinstance(X_test, pd.DataFrame):
+        X_test = pd.DataFrame(
+            data=scaler.transform(X_test),
+            index=X_test.index,
+            columns=X_test.columns
+        )
+    else:
+        raise ValueError(f"X_test should be Numpy array or Pandas DataFrame, "
+                         f"got: {type(X_test)}")
 
     return X_train, X_test
 
